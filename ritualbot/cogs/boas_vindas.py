@@ -84,7 +84,8 @@ def build_embed(
     embed.set_image(url=BANNER_URL)
 
     embed.set_footer(
-        text="☠ Impresso nas Docas de Water Seven · Todos os direitos saqueados ☠"
+        text="Família Sant's - Todos os direitos reservados bb ❤️",
+        icon_url="https://cdn.discordapp.com/attachments/961677475191078992/1511590833646731326/e.gif?ex=6a21022a&is=6a1fb0aa&hm=93e668f7b70b4bab195cd01d6ac9097457aecacad5ad847eea99cd17ab66564e&",
     )
 
     return embed
