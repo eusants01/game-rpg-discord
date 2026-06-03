@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 import random
 
 
-CHANNEL_ID = "1511581802991452311" # Só coloque o id do canal ai
+CHANNEL_ID = 1511581802991452311 # Só coloque o id do canal ai
 EMBED_COLOR   = 0x1a1008  
 
 
