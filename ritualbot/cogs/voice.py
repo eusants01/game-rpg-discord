@@ -2,7 +2,7 @@ import os
 import asyncio
 import discord
 
-from discord.ext import commands, tasks
+from discord.ext import commands
 
 
 VOICE_CHANNEL_ID = int(os.getenv("VOICE_CHANNEL_ID", 0))
@@ -10,99 +10,85 @@ VOICE_CHANNEL_ID = int(os.getenv("VOICE_CHANNEL_ID", 0))
 
 class SilenceSource(discord.AudioSource):
     def read(self):
-        return b"\x00" * 3840
+        return b"\xF8\xFF\xFE" * 960
 
     def is_opus(self):
-        return False
+        return True
 
 
 class Voice(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.lock = asyncio.Lock()
-        self.voice_task.start()
+        self.voice_client = None
+        self.reconnect_task = None
 
-    def cog_unload(self):
-        self.voice_task.cancel()
+    async def connect(self):
+        await self.bot.wait_until_ready()
 
-    async def get_voice_channel(self):
         channel = self.bot.get_channel(VOICE_CHANNEL_ID)
 
         if channel is None:
             channel = await self.bot.fetch_channel(VOICE_CHANNEL_ID)
 
-        return channel
+        if not isinstance(channel, discord.VoiceChannel):
+            print("❌ O ID informado não é de um canal de voz.")
+            return
 
-    async def connect_voice(self):
-        async with self.lock:
-            await self.bot.wait_until_ready()
+        vc = discord.utils.get(
+            self.bot.voice_clients,
+            guild=channel.guild
+        )
 
-            if not VOICE_CHANNEL_ID:
-                print("❌ VOICE_CHANNEL_ID não configurado.")
-                return
+        if vc and vc.is_connected():
+            self.voice_client = vc
 
-            try:
-                channel = await self.get_voice_channel()
-            except Exception as e:
-                print(f"❌ Canal de voz não encontrado: {repr(e)}")
-                return
+            if vc.channel.id != channel.id:
+                await vc.move_to(channel)
 
-            if not isinstance(channel, discord.VoiceChannel):
-                print("❌ O ID informado não é de um canal de voz.")
-                return
+            if not vc.is_playing():
+                vc.play(SilenceSource())
 
-            voice_client = discord.utils.get(
-                self.bot.voice_clients,
-                guild=channel.guild
-            )
+            print(f"✅ Bot já está no canal de voz: {channel.name}")
+            return
 
-            if voice_client and voice_client.is_connected():
-                if voice_client.channel.id != channel.id:
-                    await voice_client.move_to(channel)
-                    print(f"✅ Bot movido para: {channel.name}")
+        self.voice_client = await channel.connect(
+            reconnect=True,
+            self_deaf=True,
+            self_mute=False,
+            timeout=60
+        )
 
-                if not voice_client.is_playing():
-                    voice_client.play(SilenceSource())
+        self.voice_client.play(SilenceSource())
 
-                return
+        print(f"✅ Bot conectado ao canal de voz: {channel.name}")
 
-            if voice_client:
-                try:
-                    await voice_client.disconnect(force=True)
-                    await asyncio.sleep(3)
-                except Exception:
-                    pass
-
-            try:
-                voice_client = await channel.connect(
-                    reconnect=True,
-                    self_deaf=True,
-                    self_mute=True,
-                    timeout=60
-                )
-
-                voice_client.play(SilenceSource())
-
-                print(f"✅ Bot conectado 24h ao canal de voz: {channel.name}")
-
-            except discord.ClientException:
-                pass
-
-            except Exception as e:
-                print(f"❌ Erro ao conectar no canal de voz: {repr(e)}")
-
-    @tasks.loop(minutes=5)
-    async def voice_task(self):
-        await self.connect_voice()
-
-    @voice_task.before_loop
-    async def before_voice_task(self):
-        await self.bot.wait_until_ready()
+    async def reconnect_later(self):
         await asyncio.sleep(10)
+
+        try:
+            await self.connect()
+        except Exception as e:
+            print(f"❌ Erro ao reconectar voz: {repr(e)}")
+
+        self.reconnect_task = None
 
     @commands.Cog.listener()
     async def on_ready(self):
-        print("✅ [Voice] Sistema de presença 24h carregado.")
+        print("✅ [Voice] Presença em voz carregada.")
+
+        try:
+            await self.connect()
+        except Exception as e:
+            print(f"❌ Erro inicial na voz: {repr(e)}")
+
+    @commands.Cog.listener()
+    async def on_voice_state_update(self, member, before, after):
+        if not self.bot.user or member.id != self.bot.user.id:
+            return
+
+        if after.channel is None and self.reconnect_task is None:
+            print("⚠️ Bot saiu do canal. Tentando voltar em 10s...")
+            self.reconnect_task = asyncio.create_task(self.reconnect_later())
 
 
 async def setup(bot):
