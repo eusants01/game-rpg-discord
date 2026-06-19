@@ -15,6 +15,7 @@ GUILD_ID = int(os.getenv("GUILD_ID", "0"))
 intents = discord.Intents.default()
 intents.guilds = True
 intents.members = True
+intents.voice_states = True
 intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
@@ -74,6 +75,7 @@ async def carregar_cogs():
         "cogs.familias",
         "cogs.pactos",
         "cogs.mercado_amaldicoado",
+        "cogs.voice",
         "cogs.loja_maldicoes",
         "cogs.levels",
         "cogs.boas_vindas",
