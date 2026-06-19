@@ -75,7 +75,6 @@ async def carregar_cogs():
         "cogs.familias",
         "cogs.pactos",
         "cogs.mercado_amaldicoado",
-        "cogs.voice",
         "cogs.loja_maldicoes",
         "cogs.levels",
         "cogs.boas_vindas",

@@ -7,27 +7,31 @@ import discord
 from discord.ext import commands
 from datetime import datetime, timezone, timedelta
 
+EMBED_BANNER_URL = "https://cdn.discordapp.com/attachments/961677475191078992/1517576185658478612/content.png?ex=6a36c875&is=6a3576f5&hm=2de37c97024ba5d82284d80f2686fbbe8bc029b45f1ce99b9f4db24bdfb45d9b&"
+
+COR_PRINCIPAL = discord.Color.from_rgb(123, 47, 247)
+COR_RANK      = discord.Color.from_rgb(76, 201, 240)
+
 LEVEL_TITLES = [
-    (75, "🩸 Soberano do Vazio"),
-    (50,  "👁️ Portador do Haki Negro"),
-    (20,  "☠️ Caçador de Recompensas"),
-    (10,  "🌊 Navegador da Grand Line"),
-    (5,   "⚓ Marinheiro Perdido"),
+    (85, "🌌 Entidade Cósmica de Nebularis"),
+    (65, "🪐 Guardião da Nebulosa"),
+    (45, "☄️ Comandante Estelar"),
+    (25, "🛰️ Explorador Estelar"),
+    (10, "🚀 Piloto Novato"),
+    (1,  "✨ Poeira Estelar"),
 ]
-
-
 ROLE_REWARDS = {
-    5:   1489690725246308473,  # ⚓ Marinheiro Perdido
-    10:  1489690908797567197,  # 🌊 Navegador da Grand Line
-    20:  1489691028536557620,  # ☠️ Caçador de Recompensas
-    50:  1489691179963388206,  # 👁️ Portador do Haki Negro
-    75:  1489691407840055450,  # 🩸 Soberano do Vazio
+    10: 1489690725246308473,  
+    25: 1489690908797567197,  
+    45: 1489691028536557620, 
+    65: 1489691179963388206,  
+    85: 1489691407840055450,  
 }
 
 XP_BONUS_ROLES: dict[int, float] = {
     123456789012345678: 1.5,
     1480334522053558465: 2.0,
-    1486411238513836052: 3.00,
+    1486411238513836052: 3.0,
 }
 
 LEVELUP_CHANNEL_ID = int(os.getenv("LEVELUP_CHANNEL_ID", 0))
@@ -42,6 +46,14 @@ class Levels(commands.Cog):
     async def cog_load(self):
         self.pool = await asyncpg.create_pool(os.getenv("DATABASE_URL"))
         await self.criar_tabela()
+
+        if not LEVELUP_CHANNEL_ID:
+            print(
+                "[LEVELS] ⚠️ A variável de ambiente LEVELUP_CHANNEL_ID não está "
+                "definida. Os anúncios de level-up serão enviados no mesmo canal "
+                "onde a pessoa mandou a mensagem. Configure LEVELUP_CHANNEL_ID "
+                "no Railway para fixar um canal único."
+            )
 
     async def criar_tabela(self):
         async with self.pool.acquire() as conn:
@@ -63,7 +75,7 @@ class Levels(commands.Cog):
         for required_level, title in LEVEL_TITLES:
             if level >= required_level:
                 return title
-        return "⚓ Marinheiro Perdido"
+        return LEVEL_TITLES[-1][1]
 
     def calcular_level(self, xp: int) -> int:
         level = 1
@@ -75,9 +87,15 @@ class Levels(commands.Cog):
         xp_inicio_level     = self.xp_necessario(level_atual)
         xp_inicio_proximo   = self.xp_necessario(level_atual + 1)
         xp_atual_no_level   = xp_total - xp_inicio_level
-        xp_necessario_level = xp_inicio_proximo - xp_inicio_level
-        falta               = xp_inicio_proximo - xp_total
+        xp_necessario_level = max(1, xp_inicio_proximo - xp_inicio_level)
+        falta               = max(0, xp_inicio_proximo - xp_total)
         return xp_atual_no_level, xp_necessario_level, falta
+
+    def montar_barra(self, atual: int, necessario: int, tamanho: int = 12) -> str:
+        necessario = max(1, necessario)
+        proporcao  = max(0.0, min(1.0, atual / necessario))
+        cheios     = int(proporcao * tamanho)
+        return "▰" * cheios + "▱" * (tamanho - cheios)
 
     def calcular_multiplicador(self, member: discord.Member) -> float:
         ids_do_membro = {role.id for role in member.roles}
@@ -87,12 +105,20 @@ class Levels(commands.Cog):
         ]
         return max(multiplicadores, default=1.0)
 
-    async def aplicar_cargo(self, member: discord.Member, level: int):
-        if level not in ROLE_REWARDS:
-            return
-        role = member.guild.get_role(ROLE_REWARDS[level])
-        if role and role not in member.roles:
-            await member.add_roles(role, reason="Recompensa de nível")
+    async def aplicar_cargos(self, member: discord.Member, level_antigo: int, level_novo: int):
+        """Concede TODOS os cargos de recompensa entre level_antigo e level_novo
+        (importante quando alguém pula vários níveis de uma vez, ex: via !addxp)."""
+        cargos_a_conceder = [
+            threshold for threshold in ROLE_REWARDS
+            if level_antigo < threshold <= level_novo
+        ]
+        for threshold in sorted(cargos_a_conceder):
+            role = member.guild.get_role(ROLE_REWARDS[threshold])
+            if role and role not in member.roles:
+                try:
+                    await member.add_roles(role, reason=f"Recompensa de nível {threshold}")
+                except discord.Forbidden:
+                    print(f"[LEVELS] Sem permissão para aplicar o cargo de nível {threshold}.")
 
     def montar_embed_levelup(
         self,
@@ -104,34 +130,66 @@ class Levels(commands.Cog):
     ) -> discord.Embed:
         titulo = self.titulo_por_level(level_novo)
         xp_atual_no_level, xp_necessario_level, falta = self.xp_para_proximo(xp_total, level_novo)
-
-        blocos_cheios = int((xp_atual_no_level / xp_necessario_level) * 10)
-        barra = "█" * blocos_cheios + "░" * (10 - blocos_cheios)
+        barra = self.montar_barra(xp_atual_no_level, xp_necessario_level)
 
         bonus_linha = ""
         if multiplicador > 1.0:
-            bonus_linha = f"**✦ Bônus de XP:** `x{multiplicador}` (+{xp_ganho - round(xp_ganho / multiplicador)} XP extras)\n"
+            xp_base_estimado = round(xp_ganho / multiplicador)
+            bonus_linha = (
+                f"**✦ Bônus de XP:** `x{multiplicador}` "
+                f"(+{xp_ganho - xp_base_estimado} XP extras)\n"
+            )
 
         embed = discord.Embed(
-            title="🏴‍☠️  Novo Nível Alcançado!",
+            title="🌌  Novo Nível Alcançado!",
             description=(
-                f"### {member.mention} avançou nos mares!\n\n"
+                f"### {member.mention} avançou pela imensidão de Nebularis!\n\n"
                 f"**✦ Nível:** `{level_novo}`\n"
                 f"**✦ Título:** {titulo}\n"
                 f"{bonus_linha}"
                 f"\n──────────────────────\n"
                 f"**Progresso para o Nível {level_novo + 1}**\n"
                 f"`{barra}` `{xp_atual_no_level}/{xp_necessario_level} XP`\n\n"
-                f"> 📌 Faltam **{falta} XP** para alcançar o **Nível {level_novo + 1}**!\n"
+                f"> 📡 Faltam **{falta} XP** para alcançar o **Nível {level_novo + 1}**!\n"
                 f"──────────────────────"
             ),
-            color=discord.Color.from_rgb(212, 175, 55),
+            color=COR_PRINCIPAL,
         )
         embed.set_thumbnail(url=member.display_avatar.url)
-        embed.set_footer(
-            text=f"⚓  O grande rei de tudo chegará em breve aqui... • XP Total: {xp_total}"
+        embed.set_footer(text=f"🌠  Nebularis • XP Total: {xp_total}")
+        if EMBED_BANNER_URL:
+            embed.set_image(url=EMBED_BANNER_URL)
+        return embed
+
+    def montar_embed_rank(self, member: discord.Member, xp: int, level: int, posicao: int) -> discord.Embed:
+        titulo = self.titulo_por_level(level)
+        xp_atual_no_level, xp_necessario_level, falta = self.xp_para_proximo(xp, level)
+        barra = self.montar_barra(xp_atual_no_level, xp_necessario_level)
+
+        mult = self.calcular_multiplicador(member)
+        mult_linha = f"**✦ Bônus de XP:** `x{mult}`\n" if mult > 1.0 else ""
+
+        embed = discord.Embed(
+            title="🛰️  Registro de Exploração",
+            description=(
+                f"{member.mention}\n\n"
+                f"**✦ Título:** {titulo}\n"
+                f"**✦ Nível:** `{level}`\n"
+                f"**✦ Ranking:** `#{posicao}`\n"
+                f"{mult_linha}"
+                f"\n──────────────────────\n"
+                f"**Progresso para o Nível {level + 1}**\n"
+                f"`{barra}` `{xp_atual_no_level}/{xp_necessario_level} XP`\n\n"
+                f"> 📡 Faltam **{falta} XP** para o próximo nível!\n"
+                f"──────────────────────\n"
+                f"**XP Total acumulado:** `{xp}`"
+            ),
+            color=COR_RANK,
         )
-        embed.set_image(url="https://cdn.discordapp.com/attachments/1500528332008325281/1509780209002610778/content.png?ex=6a1a6be4&is=6a191a64&hm=c4b7f3ff29107bdd5e6ef1bec9178240b53eb31244ea8eddb391bfe409fb0b92&")
+        embed.set_thumbnail(url=member.display_avatar.url)
+        if EMBED_BANNER_URL:
+            embed.set_image(url=EMBED_BANNER_URL)
+        embed.set_footer(text="Continue explorando o cosmos de Nebularis.")
         return embed
 
     @commands.Cog.listener()
@@ -174,7 +232,7 @@ class Levels(commands.Cog):
                     WHERE guild_id = $2 AND user_id = $3
                 """, level_novo, guild_id, user_id)
 
-                await self.aplicar_cargo(message.author, level_novo)
+                await self.aplicar_cargos(message.author, level_antigo, level_novo)
 
                 embed = self.montar_embed_levelup(
                     message.author, level_novo, xp_total, xp_ganho, mult
@@ -182,18 +240,29 @@ class Levels(commands.Cog):
 
                 canal_destino = None
                 if LEVELUP_CHANNEL_ID:
-                    canal_destino = self.bot.get_channel(LEVELUP_CHANNEL_ID)  # busca global, mais confiável
-                if canal_destino is None:
-                    # fallback assíncrono caso não esteja no cache
-                    try:
-                        canal_destino = await self.bot.fetch_channel(LEVELUP_CHANNEL_ID)
-                    except discord.NotFound:
-                        print(f"[LEVELS] Canal {LEVELUP_CHANNEL_ID} não encontrado.")
-                    except discord.Forbidden:
-                        print(f"[LEVELS] Sem permissão no canal {LEVELUP_CHANNEL_ID}.")
+                    canal_destino = self.bot.get_channel(LEVELUP_CHANNEL_ID)
+                    if canal_destino is None:
+                        try:
+                            canal_destino = await self.bot.fetch_channel(LEVELUP_CHANNEL_ID)
+                        except discord.NotFound:
+                            print(f"[LEVELS] ⚠️ Canal {LEVELUP_CHANNEL_ID} não encontrado. "
+                                  "Verifique se o ID em LEVELUP_CHANNEL_ID está correto.")
+                        except discord.Forbidden:
+                            print(f"[LEVELS] ⚠️ Sem permissão para ver/enviar no canal "
+                                  f"{LEVELUP_CHANNEL_ID}.")
 
-                canal_destino = canal_destino or message.channel
-                await canal_destino.send(embed=embed)
+                if canal_destino is None:
+                    canal_destino = message.channel
+                    if LEVELUP_CHANNEL_ID:
+                        print(f"[LEVELS] ⚠️ Falha ao acessar o canal configurado "
+                              f"({LEVELUP_CHANNEL_ID}). Anúncio enviado em "
+                              f"#{message.channel} como alternativa.")
+
+                try:
+                    await canal_destino.send(embed=embed)
+                except discord.Forbidden:
+                    print(f"[LEVELS] ⚠️ Sem permissão para enviar mensagens em #{canal_destino}.")
+
 
     @commands.command(name="rank")
     async def rank(self, ctx, member: discord.Member = None):
@@ -207,17 +276,9 @@ class Levels(commands.Cog):
 
             if not row:
                 return await ctx.reply(
-                    f"{member.mention} ainda não começou sua jornada pelos mares. "
-                    "Mande uma mensagem para ganhar XP!"
+                    f"{member.mention} ainda não iniciou sua jornada pelo cosmos. "
+                    "Mande uma mensagem para começar a ganhar XP!"
                 )
-
-            xp    = row["xp"]
-            level = row["level"]
-            titulo = self.titulo_por_level(level)
-            xp_atual_no_level, xp_necessario_level, falta = self.xp_para_proximo(xp, level)
-
-            blocos_cheios = int((xp_atual_no_level / xp_necessario_level) * 10)
-            barra = "█" * blocos_cheios + "░" * (10 - blocos_cheios)
 
             posicao = await conn.fetchval("""
                 SELECT posicao FROM (
@@ -226,29 +287,7 @@ class Levels(commands.Cog):
                 ) ranking WHERE user_id = $2
             """, ctx.guild.id, member.id)
 
-        mult = self.calcular_multiplicador(member)
-        mult_linha = f"**✦ Bônus de XP:** `x{mult}`\n" if mult > 1.0 else ""
-
-        embed = discord.Embed(
-            title="⚓  Registro de Jornada",
-            description=(
-                f"{member.mention}\n\n"
-                f"**✦ Título:** {titulo}\n"
-                f"**✦ Nível:** `{level}`\n"
-                f"**✦ Ranking:** `#{posicao}`\n"
-                f"{mult_linha}"
-                f"\n──────────────────────\n"
-                f"**Progresso para o Nível {level + 1}**\n"
-                f"`{barra}` `{xp_atual_no_level}/{xp_necessario_level} XP`\n\n"
-                f"> 📌 Faltam **{falta} XP** para o próximo nível!\n"
-                f"──────────────────────\n"
-                f"**XP Total acumulado:** `{xp}`"
-            ),
-            color=discord.Color.blue(),
-        )
-        embed.set_thumbnail(url=member.display_avatar.url)
-        embed.set_image(url="https://cdn.discordapp.com/attachments/1500528332008325281/1509785355602366514/content.png?ex=6a1a70af&is=6a191f2f&hm=33b03d008aab587f4643968f1ca68a3dbf159c1760a0ea06fed131b856969911&")
-        embed.set_footer(text="Continue navegando para alcançar águas mais perigosas.")
+        embed = self.montar_embed_rank(member, row["xp"], row["level"], posicao)
         await ctx.reply(embed=embed)
 
     @commands.command(name="top")
@@ -261,7 +300,7 @@ class Levels(commands.Cog):
             """, ctx.guild.id)
 
         if not rows:
-            return await ctx.reply("Ainda não há piratas registrados neste mar.")
+            return await ctx.reply("Ainda não há exploradores registrados em Nebularis.")
 
         descricao = ""
         medals = {1: "🥇", 2: "🥈", 3: "🥉"}
@@ -275,11 +314,30 @@ class Levels(commands.Cog):
             )
 
         embed = discord.Embed(
-            title="🏴‍☠️  Os Piratas Mais Temidos",
+            title="🌌  Ranking Estelar de Nebularis",
             description=descricao,
-            color=discord.Color.dark_gold(),
+            color=COR_PRINCIPAL,
         )
-        embed.set_footer(text="Os nomes mais temidos dos mares da Grand Line.")
+        if EMBED_BANNER_URL:
+            embed.set_thumbnail(url=EMBED_BANNER_URL)
+        embed.set_footer(text="Os exploradores mais lendários do servidor.")
+        await ctx.reply(embed=embed)
+
+    @commands.command(name="levelroles", aliases=["cargosdenivel"])
+    async def levelroles(self, ctx):
+        """Mostra todos os cargos de recompensa e em qual nível são liberados."""
+        linhas = []
+        for threshold in sorted(ROLE_REWARDS):
+            role = ctx.guild.get_role(ROLE_REWARDS[threshold])
+            titulo = self.titulo_por_level(threshold)
+            nome_cargo = role.mention if role else "*(cargo não configurado)*"
+            linhas.append(f"**Nível {threshold}** — {titulo}\n╰ {nome_cargo}\n")
+
+        embed = discord.Embed(
+            title="🪐  Cargos de Recompensa",
+            description="\n".join(linhas) or "Nenhum cargo configurado ainda.",
+            color=COR_PRINCIPAL,
+        )
         await ctx.reply(embed=embed)
 
     @commands.command(name="setxp")
@@ -287,14 +345,24 @@ class Levels(commands.Cog):
     async def setxp(self, ctx, member: discord.Member, xp: int):
         if xp < 0:
             return await ctx.reply("O XP não pode ser negativo.")
-        level_novo = self.calcular_level(xp)
+
         async with self.pool.acquire() as conn:
+            row_anterior = await conn.fetchrow("""
+                SELECT level FROM levels WHERE guild_id = $1 AND user_id = $2
+            """, ctx.guild.id, member.id)
+            level_antigo = row_anterior["level"] if row_anterior else 1
+
+            level_novo = self.calcular_level(xp)
             await conn.execute("""
                 INSERT INTO levels (guild_id, user_id, xp, level, updated_at)
                 VALUES ($1, $2, $3, $4, NOW())
                 ON CONFLICT (guild_id, user_id)
                 DO UPDATE SET xp = $3, level = $4, updated_at = NOW()
             """, ctx.guild.id, member.id, xp, level_novo)
+
+        if level_novo > level_antigo:
+            await self.aplicar_cargos(member, level_antigo, level_novo)
+
         await ctx.reply(
             f"✅ XP de {member.mention} definido para **{xp}** (Nível `{level_novo}`)."
         )
@@ -312,12 +380,19 @@ class Levels(commands.Cog):
                     updated_at = NOW()
                 RETURNING xp, level;
             """, ctx.guild.id, member.id, xp)
-            xp_total   = row["xp"]
-            level_novo = self.calcular_level(xp_total)
+
+            xp_total     = row["xp"]
+            level_antigo = row["level"]
+            level_novo   = self.calcular_level(xp_total)
+
             await conn.execute("""
                 UPDATE levels SET level = $1
                 WHERE guild_id = $2 AND user_id = $3
             """, level_novo, ctx.guild.id, member.id)
+
+        if level_novo > level_antigo:
+            await self.aplicar_cargos(member, level_antigo, level_novo)
+
         sinal = "+" if xp >= 0 else ""
         await ctx.reply(
             f"✅ {sinal}{xp} XP aplicado a {member.mention}. "
@@ -337,7 +412,7 @@ class Levels(commands.Cog):
             """, ctx.guild.id, member.id)
 
         if not row:
-            return await ctx.reply("Usuário sem XP registrado. Use !setxp primeiro.")
+            return await ctx.reply("Usuário sem XP registrado. Use `!setxp` primeiro.")
 
         mult = self.calcular_multiplicador(member)
         embed = self.montar_embed_levelup(member, row["level"], row["xp"], 25, mult)
