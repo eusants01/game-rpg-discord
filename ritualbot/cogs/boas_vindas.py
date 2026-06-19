@@ -1,92 +1,148 @@
+import os
+import random
+from datetime import datetime, timezone
+
 import discord
 from discord.ext import commands
-from datetime import datetime, timezone
-import random
 
 
-CHANNEL_ID  = 1511581802991452311
-EMBED_COLOR = 0x1a1008
-BANNER_URL  = "https://cdn.discordapp.com/attachments/961677475191078992/1511588427877842944/content.png?ex=6a20ffed&is=6a1fae6d&hm=5566f784d522dcae8e8c53f104a5cf26c8fbadccc3a2c8ae0142b41cddcbc4c8&"
+CHANNEL_ID = int(os.getenv("CANAL_BOAS_VINDAS_ID", 1511581802991452311))
+
+EMBED_COLOR = 0x7B4DFF
+
+BANNER_URL = os.getenv(
+    "BANNER_BOAS_VINDAS_URL",
+    "https://cdn.discordapp.com/attachments/1498137107997130855/1517423859689717852/content.png?ex=6a363a98&is=6a34e918&hm=efc765d5c0e9d1c9a887d684a8e746f961c49a6ce3aad506f14f6613ed0be53f&"
+)
+
+FOOTER_ICON_URL = os.getenv(
+    "LOGO_NEBULARIS_URL",
+    ""
+)
 
 
 HEADLINES = [
-    "RECÉM-CHEGADO CAUSA ALVOROÇO NO GRAND LINE!",
-    "NOVO PIRATA AVISTADO NAS ÁGUAS DO SERVIDOR!",
-    "LENDÁRIO RECRUTA ABORDA NOSSA EMBARCAÇÃO!",
-    "MISTERIOSO NAVEGANTE ENTRA EM NOSSO PORTO!",
-    "MAIS UM FORAGIDO SE JUNTA À NOSSA TRIPULAÇÃO!",
-    "RECRUTA DESAFIA O DESTINO AO ENTRAR AQUI!",
+    "UMA NOVA ESTRELA SURGIU NA NEBULARIS",
+    "UM EXPLORADOR ATRAVESSOU O HORIZONTE",
+    "SINAL DETECTADO: NOVO MEMBRO LOCALIZADO",
+    "UMA NOVA PRESENÇA ENTROU EM ÓRBITA",
+    "O UNIVERSO DA NEBULARIS ACABA DE EXPANDIR",
+    "NOVO EXPLORADOR CONECTADO À CONSTELAÇÃO",
 ]
 
 
-def _account_age(created: datetime) -> str:
-    delta  = datetime.now(timezone.utc) - created
-    years  = delta.days // 365
+WELCOME_MESSAGES = [
+    "Que sua jornada por aqui seja incrível.",
+    "Prepare-se para explorar novos momentos conosco.",
+    "Você agora faz parte de uma comunidade em expansão.",
+    "Entre, participe e faça parte dessa história.",
+    "A Nebularis acaba de ganhar uma nova estrela.",
+]
+
+
+def account_age(created: datetime) -> str:
+    now = datetime.now(timezone.utc)
+    delta = now - created
+
+    years = delta.days // 365
     months = (delta.days % 365) // 30
-    days   = delta.days % 30
+    days = delta.days % 30
+
     if years:
         return f"{years} ano{'s' if years > 1 else ''} e {months} {'meses' if months != 1 else 'mês'}"
+
     if months:
         return f"{months} {'meses' if months != 1 else 'mês'} e {days} dia{'s' if days != 1 else ''}"
-    return f"{delta.days} dia{'s' if delta.days != 1 else ''}"
+
+    return f"{days} dia{'s' if days != 1 else ''}"
 
 
 def build_embed(
-    member:    discord.Member,
-    inviter:   discord.Member | discord.User | None,
+    member: discord.Member,
+    inviter: discord.Member | discord.User | None,
     inv_total: int,
+    member_count: int
 ) -> discord.Embed:
 
-    now      = datetime.now(timezone.utc)
-    acc_age  = _account_age(member.created_at)
+    now = datetime.now(timezone.utc)
+    created_at = int(member.created_at.timestamp())
     acc_days = (now - member.created_at).days
-    edition  = random.randint(4000, 9999)
+    acc_age = account_age(member.created_at)
+
     headline = random.choice(HEADLINES)
+    welcome = random.choice(WELCOME_MESSAGES)
 
-    embed = discord.Embed(color=EMBED_COLOR)
-
-    
-    embed.set_author(
-        name=f"☠  USOPP NEWS  ·  Edição Nº {edition:,}  ·  {now.strftime('%d/%m/%Y')}",
-        icon_url=member.display_avatar.url,
+    embed = discord.Embed(
+        title=f"🌌 {headline}",
+        description=(
+            f"Bem-vindo(a), {member.mention}.\n\n"
+            f"{welcome}\n\n"
+            f"Você é o **{member_count}º explorador** a entrar na Nebularis."
+        ),
+        color=EMBED_COLOR,
+        timestamp=now
     )
 
-    # Manchete
-    embed.title = f"📰  {headline}"
+    embed.set_author(
+        name="Nebularis • Entrada Detectada",
+        icon_url=member.display_avatar.url
+    )
 
-  
     embed.set_thumbnail(url=member.display_avatar.url)
 
-    new_tag = "  ⚠️ conta nova!" if acc_days < 30 else ""
+    account_status = "⚠️ Conta recente" if acc_days < 30 else "✅ Conta verificada"
+
     embed.add_field(
-        name=f"⚓  {member.display_name}",
+        name="👤 Explorador",
         value=(
-            f"**Conta criada:** <t:{int(member.created_at.timestamp())}:D>\n"
-            f"**Idade da conta:** `{acc_age}`{new_tag}"
+            f"**Nome:** {member.mention}\n"
+            f"**ID:** `{member.id}`\n"
+            f"**Conta criada:** <t:{created_at}:D>\n"
+            f"**Idade da conta:** `{acc_age}`\n"
+            f"**Status:** {account_status}"
         ),
-        inline=False,
+        inline=False
     )
 
     if inviter:
-        inv_txt = "1 convite" if inv_total == 1 else f"{inv_total} convites"
+        invite_text = "1 convite" if inv_total == 1 else f"{inv_total} convites"
+
         embed.add_field(
-            name="⚔️  Recrutado por",
-            value=f"{inviter.mention} — `{inviter.name}` · {inv_txt}",
-            inline=False,
+            name="🛰️ Convidado por",
+            value=(
+                f"{inviter.mention}\n"
+                f"**Usuário:** `{inviter.name}`\n"
+                f"**Total registrado:** `{invite_text}`"
+            ),
+            inline=False
         )
     else:
         embed.add_field(
-            name="⚔️  Recrutado por",
-            value="_Recrutador desconhecido — veio pelo próprio poder do destino_",
-            inline=False,
+            name="🛰️ Convidado por",
+            value="Não foi possível identificar o convite utilizado.",
+            inline=False
         )
 
-    embed.set_image(url=BANNER_URL)
-
-    embed.set_footer(
-        text="Família Sant's - Todos os direitos reservados bb ❤️",
-        icon_url="https://cdn.discordapp.com/attachments/961677475191078992/1511590833646731326/e.gif?ex=6a21022a&is=6a1fb0aa&hm=93e668f7b70b4bab195cd01d6ac9097457aecacad5ad847eea99cd17ab66564e&",
+    embed.add_field(
+        name="🚀 Primeiros passos",
+        value=(
+            "Leia as regras, escolha seus cargos e participe dos canais da comunidade.\n"
+            "A Nebularis é construída por pessoas, histórias e grandes momentos."
+        ),
+        inline=False
     )
+
+    if BANNER_URL:
+        embed.set_image(url=BANNER_URL)
+
+    footer_kwargs = {
+        "text": "Nebularis • Entre horizontes infinitos."
+    }
+
+    if FOOTER_ICON_URL:
+        footer_kwargs["icon_url"] = FOOTER_ICON_URL
+
+    embed.set_footer(**footer_kwargs)
 
     return embed
 
@@ -94,70 +150,89 @@ def build_embed(
 invite_cache: dict[int, dict[str, discord.Invite]] = {}
 
 
-async def _refresh(guild: discord.Guild) -> None:
+async def refresh_invites(guild: discord.Guild) -> None:
     try:
         invites = await guild.invites()
-        invite_cache[guild.id] = {i.code: i for i in invites}
-    except discord.Forbidden:
-        pass
+        invite_cache[guild.id] = {invite.code: invite for invite in invites}
 
+    except discord.Forbidden:
+        print(f"[BoasVindas] Sem permissão para ver convites em {guild.name}.")
+
+    except discord.HTTPException as error:
+        print(f"[BoasVindas] Erro ao atualizar convites: {error}")
 
 
 class BoasVindas(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self._inv_counts: dict[str, int] = {}
+        self.invite_counts: dict[int, int] = {}
 
     @commands.Cog.listener()
     async def on_ready(self):
         for guild in self.bot.guilds:
-            await _refresh(guild)
-        print("[BoasVindas] cache de invites pronto.")
+            await refresh_invites(guild)
+
+        print("✅ [BoasVindas] Sistema carregado com sucesso.")
 
     @commands.Cog.listener()
     async def on_guild_join(self, guild: discord.Guild):
-        await _refresh(guild)
+        await refresh_invites(guild)
 
     @commands.Cog.listener()
     async def on_invite_create(self, invite: discord.Invite):
-        await _refresh(invite.guild)
+        if invite.guild:
+            await refresh_invites(invite.guild)
 
     @commands.Cog.listener()
     async def on_invite_delete(self, invite: discord.Invite):
-        await _refresh(invite.guild)
+        if invite.guild:
+            await refresh_invites(invite.guild)
 
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member):
-        guild   = member.guild
+        guild = member.guild
         channel = guild.get_channel(CHANNEL_ID)
 
         if not channel:
-            print(f"[BoasVindas] Canal {CHANNEL_ID} não encontrado em '{guild.name}'.")
+            print(f"[BoasVindas] Canal {CHANNEL_ID} não encontrado em {guild.name}.")
             return
 
-        old = invite_cache.get(guild.id, {})
-        await _refresh(guild)
-        new = invite_cache.get(guild.id, {})
+        old_invites = invite_cache.get(guild.id, {})
 
-        used: discord.Invite | None = None
-        for code, inv in new.items():
-            prev = old.get(code)
-            if prev is None or inv.uses > prev.uses:
-                used = inv
+        await refresh_invites(guild)
+
+        new_invites = invite_cache.get(guild.id, {})
+
+        used_invite: discord.Invite | None = None
+
+        for code, new_invite in new_invites.items():
+            old_invite = old_invites.get(code)
+
+            if old_invite and new_invite.uses > old_invite.uses:
+                used_invite = new_invite
                 break
 
-        inviter   = None
+        inviter = None
         inv_total = 0
 
-        if used and used.inviter:
-            raw     = used.inviter
-            inviter = guild.get_member(raw.id) or raw
-            key     = str(raw.id)
-            self._inv_counts[key] = self._inv_counts.get(key, 0) + 1
-            inv_total = self._inv_counts[key]
+        if used_invite and used_invite.inviter:
+            inviter = guild.get_member(used_invite.inviter.id) or used_invite.inviter
 
-        embed = build_embed(member=member, inviter=inviter, inv_total=inv_total)
-        await channel.send(embed=embed)
+            inviter_id = used_invite.inviter.id
+            self.invite_counts[inviter_id] = self.invite_counts.get(inviter_id, 0) + 1
+            inv_total = self.invite_counts[inviter_id]
+
+        embed = build_embed(
+            member=member,
+            inviter=inviter,
+            inv_total=inv_total,
+            member_count=guild.member_count or 0
+        )
+
+        await channel.send(
+            content=f"🌌 Bem-vindo(a), {member.mention}.",
+            embed=embed
+        )
 
 
 async def setup(bot: commands.Bot):
