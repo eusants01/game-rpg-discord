@@ -1,20 +1,16 @@
 import os
+import asyncio
 import discord
 from discord.ext import commands
 
 
-def get_voice_channel_id():
-    value = os.getenv("VOICE_CHANNEL_ID", "0").strip()
-    return int(value) if value.isdigit() else 0
-
-
-VOICE_CHANNEL_ID = get_voice_channel_id()
+VOICE_CHANNEL_ID = int(os.getenv("VOICE_CHANNEL_ID", 0))
 
 
 class Voice(commands.Cog):
-    def __init__(self, bot: commands.Bot):
+    def __init__(self, bot):
         self.bot = bot
-        self.connected = False
+        self.reconnecting = False
 
     async def conectar_voz(self):
         await self.bot.wait_until_ready()
@@ -33,51 +29,68 @@ class Voice(commands.Cog):
                 return
 
         if not isinstance(channel, (discord.VoiceChannel, discord.StageChannel)):
-            print("❌ O ID informado não é de um canal de voz.")
+            print("❌ O ID informado não é de canal de voz.")
             return
-
-        guild = channel.guild
 
         voice_client = discord.utils.get(
             self.bot.voice_clients,
-            guild=guild
+            guild=channel.guild
         )
 
-        if voice_client and voice_client.is_connected():
-            print("✅ Bot já está conectado ao canal de voz.")
-            return
+        if voice_client:
+            if voice_client.is_connected():
+                if voice_client.channel.id == channel.id:
+                    print("✅ Bot já está conectado no canal correto.")
+                    return
+
+                await voice_client.move_to(channel)
+                print(f"✅ Bot movido para: {channel.name}")
+                return
+
+            try:
+                await voice_client.disconnect(force=True)
+            except:
+                pass
 
         try:
             await channel.connect(
                 reconnect=True,
-                self_deaf=True
+                self_deaf=True,
+                self_mute=True
             )
 
             print(f"✅ Bot conectado ao canal de voz: {channel.name}")
+
+        except discord.ClientException as e:
+            if "Already connected" in str(e):
+                print("⚠️ Bot já estava conectado. Ignorando reconexão.")
+                return
+
+            print(f"❌ Erro ao conectar: {e}")
 
         except Exception as e:
             print(f"❌ Erro ao conectar no canal de voz: {e}")
 
     @commands.Cog.listener()
     async def on_ready(self):
-        if self.connected:
-            return
-
-        self.connected = True
+        await asyncio.sleep(3)
         await self.conectar_voz()
 
     @commands.Cog.listener()
     async def on_voice_state_update(self, member, before, after):
-        if not self.bot.user:
+        if not self.bot.user or member.id != self.bot.user.id:
             return
 
-        if member.id != self.bot.user.id:
-            return
+        if after.channel is None and not self.reconnecting:
+            self.reconnecting = True
 
-        if after.channel is None:
-            print("⚠️ Bot saiu do canal de voz. Tentando reconectar...")
+            print("⚠️ Bot saiu do canal de voz. Reconectando em 5 segundos...")
+
+            await asyncio.sleep(5)
             await self.conectar_voz()
 
+            self.reconnecting = False
 
-async def setup(bot: commands.Bot):
+
+async def setup(bot):
     await bot.add_cog(Voice(bot))
