@@ -21,11 +21,14 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 status_list = [
-    "🎰 O Cassino do Diabo abriu...",
-    "🪙 Moedas do Diabo circulando...",
-    "🎲 A roleta está girando...",
-    "✍️ Pactos sendo assinados...",
-    "👁️ A casa sempre observa.",
+    "🌌 Um universo. Infinitas histórias.",
+    "🪐 Orbitando pela comunidade...",
+    "✨ Criando novas experiências...",
+    "📡 Conectando membros...",
+    "⚡ Processando sistemas...",
+    "🌠 Moldando o futuro...",
+    "🚀 Evoluindo constantemente...",
+    "💜 Desenvolvido por Sant's",
 ]
 
 
