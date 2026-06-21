@@ -1,16 +1,19 @@
 import os
 import asyncio
 import discord
+
 from discord.ext import commands, tasks
 from dotenv import load_dotenv
 
 from utils.db import criar_tabelas
 from utils.cassino_db import criar_tabelas_cassino
 
+
 load_dotenv()
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 GUILD_ID = int(os.getenv("GUILD_ID", "0"))
+
 
 intents = discord.Intents.default()
 intents.guilds = True
@@ -18,14 +21,19 @@ intents.members = True
 intents.voice_states = True
 intents.message_content = True
 
-bot = commands.Bot(command_prefix="!", intents=intents)
+
+bot = commands.Bot(
+    command_prefix="!",
+    intents=intents
+)
+
 
 status_list = [
     "🌌 Um universo. Infinitas histórias.",
     "🪐 Orbitando pela comunidade...",
     "✨ Criando novas experiências...",
     "📡 Conectando membros...",
-    "⚡ Processando sistemas...",
+    "⚡ Núcleo Nebularis ativo...",
     "🌠 Moldando o futuro...",
     "🚀 Evoluindo constantemente...",
     "💜 Desenvolvido por Sant's",
@@ -35,18 +43,11 @@ status_list = [
 @tasks.loop(seconds=20)
 async def trocar_status():
     status = status_list[trocar_status.current_loop % len(status_list)]
+
     await bot.change_presence(
         activity=discord.Game(name=status),
         status=discord.Status.online
     )
-
-
-@bot.event
-async def on_message(message):
-    if message.author.bot:
-        return
-
-    await bot.process_commands(message)
 
 
 @bot.event
@@ -57,7 +58,7 @@ async def on_ready():
     if not trocar_status.is_running():
         trocar_status.start()
 
-    print(f"✅ RitualBot online como {bot.user}")
+    print(f"🌌 Nebularis online como {bot.user}")
 
     try:
         if GUILD_ID:
@@ -67,8 +68,17 @@ async def on_ready():
         else:
             synced = await bot.tree.sync()
             print(f"✅ {len(synced)} comandos sincronizados globalmente.")
+
     except Exception as e:
         print(f"❌ Erro ao sincronizar comandos: {e}")
+
+
+@bot.event
+async def on_message(message):
+    if message.author.bot:
+        return
+
+    await bot.process_commands(message)
 
 
 async def carregar_cogs():
@@ -83,17 +93,15 @@ async def carregar_cogs():
         "cogs.boas_vindas",
         "cogs.loja_feiticeiros",
 
-        # 🎰 Cassino do Diabo
+        # Sistemas Nebularis
         "cogs.painel_cassino",
         "cogs.economia",
         "cogs.roleta",
         "cogs.leilao",
     ]
-    
 
     for cog in cogs:
         try:
-            # Evita carregar a mesma extensão duas vezes
             if cog in bot.extensions:
                 print(f"⚠️ Cog já carregado, ignorando: {cog}")
                 continue
@@ -111,11 +119,10 @@ async def carregar_cogs():
             print(f"❌ O cog {cog} não possui função setup(bot).")
 
         except commands.ExtensionFailed as e:
-            # Evita o bot cair por cog duplicado
             erro = str(e)
 
             if "already loaded" in erro or "already registered" in erro:
-                print(f"⚠️ Cog duplicado detectado em {cog}, ignorando para evitar crash.")
+                print(f"⚠️ Cog duplicado detectado em {cog}, ignorando.")
                 continue
 
             print(f"❌ Erro ao carregar {cog}: {repr(e)}")
