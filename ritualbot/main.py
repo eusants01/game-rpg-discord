@@ -14,39 +14,51 @@ load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
 GUILD_ID = int(os.getenv("GUILD_ID", "0"))
 
+
 intents = discord.Intents.default()
 intents.guilds = True
 intents.members = True
 intents.voice_states = True
 intents.message_content = True
 
-bot = commands.Bot(command_prefix="!", intents=intents)
+
+bot = commands.Bot(
+    command_prefix="!",
+    intents=intents
+)
 
 
 status_list = [
     "🌌 Um universo. Infinitas histórias.",
-    "🪐 Orbitando pela comunidade...",
-    "✨ Criando novas experiências...",
-    "📡 Conectando membros...",
-    "⚡ Núcleo Nebularis ativo...",
-    "🌠 Moldando o futuro...",
-    "🚀 Evoluindo constantemente...",
+    "🪐 a comunidade orbitando",
+    "✨ novas experiências surgindo",
+    "📡 sinais da galáxia",
+    "⚡ o Núcleo Nebularis",
+    "🌠 o universo se expandir",
+    "🚀 novas funções chegando",
     "💜 Desenvolvido por Sant's",
 ]
 
 
-@tasks.loop(seconds=20)
+@tasks.loop(seconds=30)
 async def trocar_status():
     status_atual = status_list[
         trocar_status.current_loop % len(status_list)
     ]
 
-    await bot.change_presence(
-        status=discord.Status.online,
-        activity=discord.CustomActivity(
-            name=status_atual
+    try:
+        await bot.change_presence(
+            status=discord.Status.online,
+            activity=discord.Activity(
+                type=discord.ActivityType.watching,
+                name=status_atual
+            )
         )
-    )
+
+        print(f"🔄 Status atualizado: {status_atual}")
+
+    except Exception as e:
+        print(f"❌ Erro ao atualizar status: {e}")
 
 
 @trocar_status.before_loop
@@ -56,13 +68,18 @@ async def before_trocar_status():
 
 @bot.event
 async def on_ready():
-    criar_tabelas()
-    criar_tabelas_cassino()
+    print(f"🌌 Nebularis online como {bot.user}")
+
+    try:
+        criar_tabelas()
+        criar_tabelas_cassino()
+        print("✅ Banco de dados verificado.")
+    except Exception as e:
+        print(f"❌ Erro ao criar/verificar tabelas: {e}")
 
     if not trocar_status.is_running():
         trocar_status.start()
-
-    print(f"🌌 Nebularis online como {bot.user}")
+        print("✅ Sistema de status iniciado.")
 
     try:
         if GUILD_ID:
@@ -136,7 +153,9 @@ async def carregar_cogs():
 
 async def main():
     if not TOKEN:
-        raise RuntimeError("Token não encontrado. Configure DISCORD_TOKEN no Railway.")
+        raise RuntimeError(
+            "Token não encontrado. Configure DISCORD_TOKEN no Railway."
+        )
 
     async with bot:
         await carregar_cogs()
