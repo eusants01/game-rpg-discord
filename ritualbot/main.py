@@ -14,18 +14,13 @@ load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
 GUILD_ID = int(os.getenv("GUILD_ID", "0"))
 
-
 intents = discord.Intents.default()
 intents.guilds = True
 intents.members = True
 intents.voice_states = True
 intents.message_content = True
 
-
-bot = commands.Bot(
-    command_prefix="!",
-    intents=intents
-)
+bot = commands.Bot(command_prefix="!", intents=intents)
 
 
 status_list = [
@@ -42,12 +37,21 @@ status_list = [
 
 @tasks.loop(seconds=20)
 async def trocar_status():
-    status = status_list[trocar_status.current_loop % len(status_list)]
+    status_atual = status_list[
+        trocar_status.current_loop % len(status_list)
+    ]
 
     await bot.change_presence(
-        activity=discord.Game(name=status),
-        status=discord.Status.online
+        status=discord.Status.online,
+        activity=discord.CustomActivity(
+            name=status_atual
+        )
     )
+
+
+@trocar_status.before_loop
+async def before_trocar_status():
+    await bot.wait_until_ready()
 
 
 @bot.event
@@ -85,7 +89,6 @@ async def carregar_cogs():
     cogs = [
         "cogs.abate",
         "cogs.maldicoes",
-        "cogs.familias",
         "cogs.pactos",
         "cogs.mercado_amaldicoado",
         "cogs.loja_maldicoes",
@@ -126,16 +129,14 @@ async def carregar_cogs():
                 continue
 
             print(f"❌ Erro ao carregar {cog}: {repr(e)}")
-            raise
 
         except Exception as e:
             print(f"❌ Erro inesperado ao carregar {cog}: {repr(e)}")
-            raise
 
 
 async def main():
     if not TOKEN:
-        raise RuntimeError("Token não encontrado. Configure o arquivo .env")
+        raise RuntimeError("Token não encontrado. Configure DISCORD_TOKEN no Railway.")
 
     async with bot:
         await carregar_cogs()
